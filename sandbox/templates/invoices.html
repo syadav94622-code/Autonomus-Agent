@@ -1,0 +1,3 @@
+{% extends "base.html" %}{% block body %}<h1>Invoices</h1>
+<table><tr><th>ID</th><th>Vendor</th><th>Invoice</th><th>Amount</th><th>Due</th></tr>
+{% for r in rows %}<tr><td><a href="/invoices/{{ r.id }}">{{ r.id }}</a></td><td>{{ r.vendor }}</td><td>{{ r.invoice_number }}</td><td>{{ '%.2f'|format(r.amount) }}</td><td>{{ r.due_date }}</td></tr>{% else %}<tr><td colspan="5">No invoices yet.</td></tr>{% endfor %}</table>{% endblock %}

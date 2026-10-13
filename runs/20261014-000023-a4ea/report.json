@@ -1,0 +1,68 @@
+{
+  "run_id": "20261014-000023-a4ea",
+  "goal": "Enter the latest invoice from Globex Inc into the internal system.",
+  "status": "completed",
+  "facts": {
+    "vendor": "Globex Inc",
+    "amount": "1125.00",
+    "due_date": "2026-04-19",
+    "invoice_date": "2026-03-20",
+    "invoice_number": "INV-5602",
+    "source_file": "sandbox/data/emails/globex-inc_INV-5602.txt",
+    "amount_due": "1125.00",
+    "record_type": "invoice",
+    "record_id": "1",
+    "record_url": "http://127.0.0.1:5001/invoices/1"
+  },
+  "checks": {
+    "record_check": {
+      "passed": true,
+      "detail": "ERP record matches facts ({'vendor': 'Globex Inc', 'invoice_number': 'INV-5602', 'amount': '1125.00', 'due_date': '2026-04-19'}). Evidence: D:\\centralign-operator\\runs\\20261014-000023-a4ea\\verify_record.png"
+    },
+    "source_check": {
+      "passed": true,
+      "detail": "Extracted values appear literally in sandbox/data/emails/globex-inc_INV-5602.txt"
+    },
+    "side_effect_check": {
+      "passed": true,
+      "detail": "Exactly one new record; approval ordering OK"
+    }
+  },
+  "replans": 0,
+  "approvals": [],
+  "human_answers": [],
+  "interrupts": [],
+  "submissions": [
+    {
+      "record_type": "invoice",
+      "vendor": "Globex Inc",
+      "amount": "1125.00",
+      "due_date": "2026-04-19",
+      "invoice_number": "INV-5602",
+      "po_number": "",
+      "ok": false,
+      "url": "http://127.0.0.1:5001/invoices/new",
+      "screenshot": "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\submit_1.png",
+      "error": "URL: http://127.0.0.1:5001/invoices/new\nInternal Server Error\nThe server encountered an internal error and was unable to complete your request. Either the server is overloaded or there is an error in the application."
+    },
+    {
+      "record_type": "invoice",
+      "vendor": "Globex Inc",
+      "amount": "1125.00",
+      "due_date": "2026-04-19",
+      "invoice_number": "INV-5602",
+      "po_number": "",
+      "ok": true,
+      "url": "http://127.0.0.1:5001/invoices/1",
+      "screenshot": "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\submit_2.png",
+      "error": null
+    }
+  ],
+  "screenshots": [
+    "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\submit_1.png",
+    "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\submit_2.png",
+    "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\invoice_globex_inc.png",
+    "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\verify_record.png"
+  ],
+  "audit_log": "D:\\centralign-operator\\runs\\20261014-000023-a4ea\\audit.jsonl"
+}

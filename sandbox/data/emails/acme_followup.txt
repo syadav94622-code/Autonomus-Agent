@@ -1,0 +1,4 @@
+From: billing@acme.example
+Subject: Reminder - February invoice
+
+Hi, just a reminder that our latest invoice is attached to the usual folder. Thanks, Acme billing

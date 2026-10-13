@@ -1,0 +1,6 @@
+{% extends "base.html" %}{% block body %}<h1>Invoice record #{{ r.id }}</h1>
+<table>
+<tr><th>Vendor</th><td id="f-vendor">{{ r.vendor }}</td></tr>
+<tr><th>Invoice number</th><td id="f-invoice_number">{{ r.invoice_number }}</td></tr>
+<tr><th>Amount</th><td id="f-amount">{{ '%.2f'|format(r.amount) }}</td></tr>
+<tr><th>Due date</th><td id="f-due_date">{{ r.due_date }}</td></tr></table>{% endblock %}

@@ -1,0 +1,14 @@
+langgraph>=1.0
+langchain>=1.0              # provides create_agent + middleware
+langchain-core>=1.0
+langchain-anthropic>=1.0    # default provider (official Anthropic SDK)
+# langchain-groq>=1.0       # only if LLM_PROVIDER=groq
+# langchain-openai>=1.0     # only if LLM_PROVIDER=openai
+# langchain-google-genai    # only if LLM_PROVIDER=google
+# langchain-xai             # only if LLM_PROVIDER=xai
+playwright>=1.45
+pydantic>=2.7
+flask>=3.0
+pypdf>=4.0
+python-dotenv>=1.0
+pyyaml>=6.0

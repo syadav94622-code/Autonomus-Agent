@@ -1,0 +1,52 @@
+{
+  "run_id": "20261013-235453-fc7a",
+  "goal": "Mark the latest PO from Globex as received.",
+  "status": "completed",
+  "facts": {
+    "po_date": "2026-03-12",
+    "po_number": "PO-7003",
+    "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf",
+    "vendor": "Globex Inc",
+    "record_type": "po_receive",
+    "record_id": "3",
+    "record_url": "http://127.0.0.1:5001/pos/3"
+  },
+  "checks": {
+    "record_check": {
+      "passed": true,
+      "detail": "PO shows received ({'vendor': 'Globex Inc', 'po_number': 'PO-7003', 'status': 'received'}). Evidence: D:\\centralign-operator\\runs\\20261013-235453-fc7a\\verify_record.png"
+    },
+    "source_check": {
+      "passed": true,
+      "detail": "Extracted values appear literally in sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"
+    },
+    "side_effect_check": {
+      "passed": true,
+      "detail": "Exactly one new record; approval ordering OK"
+    }
+  },
+  "replans": 0,
+  "approvals": [],
+  "human_answers": [],
+  "interrupts": [],
+  "submissions": [
+    {
+      "record_type": "po_receive",
+      "vendor": "Globex Inc",
+      "amount": "",
+      "due_date": "",
+      "invoice_number": "",
+      "po_number": "PO-7003",
+      "ok": true,
+      "url": "http://127.0.0.1:5001/pos/3",
+      "screenshot": "D:\\centralign-operator\\runs\\20261013-235453-fc7a\\submit_1.png",
+      "error": null
+    }
+  ],
+  "screenshots": [
+    "D:\\centralign-operator\\runs\\20261013-235453-fc7a\\submit_1.png",
+    "D:\\centralign-operator\\runs\\20261013-235453-fc7a\\po_receive_success.png",
+    "D:\\centralign-operator\\runs\\20261013-235453-fc7a\\verify_record.png"
+  ],
+  "audit_log": "D:\\centralign-operator\\runs\\20261013-235453-fc7a\\audit.jsonl"
+}

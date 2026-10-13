@@ -1,0 +1,4 @@
+From: ops@globex.example
+Subject: PO shipped
+
+Your most recent purchase order has shipped and should arrive this week.

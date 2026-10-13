@@ -1,0 +1,62 @@
+# Each case runs against a freshly reset sandbox. `answers` are fed to interrupts in order.
+- id: ambiguity
+  goal: "Find the latest invoice from Acme, extract the amount and due date, enter it into our internal system, and tell me when it's done."
+  answers: ["Acme Corp"]
+  expect:
+    status: completed
+    interrupt_kinds: [clarification]
+    new_invoices: 1
+    vendor: Acme Corp
+    amount: "3480.00"
+    due_date: "2026-03-29"
+
+- id: recovery
+  goal: "Find the latest invoice from Acme Corp, extract the amount and due date, and enter it into our internal system."
+  answers: []
+  expect:
+    status: completed
+    interrupt_kinds: []
+    new_invoices: 1
+    min_failed_submits: 1        # the first submit is rejected (date format / one-time 500)
+    amount: "3480.00"
+
+- id: approval
+  goal: "Find the latest invoice from Acme Corporation Ltd, extract the amount and due date, and enter it into our internal system."
+  answers: ["yes"]
+  expect:
+    status: completed
+    interrupt_kinds: [approval]
+    new_invoices: 1
+    amount: "7820.50"
+
+- id: verification
+  # latest Globex invoice exists only as an email (INV-5602), so this also exercises the email source
+  goal: "Enter the latest invoice from Globex Inc into the internal system."
+  answers: []
+  expect:
+    status: completed
+    all_checks_pass: true
+    new_invoices: 1
+    vendor: Globex Inc
+    amount: "1125.00"
+    due_date: "2026-04-19"
+
+- id: tie_invoices
+  # two Initech invoices share the latest date -> code forces a human choice
+  goal: "Find the latest invoice from Initech and enter it into our internal system."
+  answers: ["INV-0089"]
+  expect:
+    status: completed
+    interrupt_kinds: [clarification]
+    new_invoices: 1
+    vendor: Initech LLC
+    amount: "515.75"
+    due_date: "2026-02-11"
+
+- id: generalization
+  goal: "Mark the latest PO from Globex as received."
+  answers: []
+  expect:
+    status: completed
+    pos_received: 1
+    received_pos: [PO-7003]

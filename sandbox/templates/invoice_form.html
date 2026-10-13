@@ -1,0 +1,8 @@
+{% extends "base.html" %}{% block body %}<h1>New invoice</h1>
+<form method="post" action="/invoices/new">
+<label for="vendor">Vendor</label>
+<select id="vendor" name="vendor">{% for v in vendors %}<option value="{{ v }}" {{ 'selected' if v == form.get('vendor') }}>{{ v }}</option>{% endfor %}</select>
+<label for="invoice_number">Invoice number</label><input id="invoice_number" name="invoice_number" value="{{ form.get('invoice_number','') }}">
+<label for="amount">Amount (USD)</label><input id="amount" name="amount" value="{{ form.get('amount','') }}">
+<label for="due_date">Due date ({{ 'MM/DD/YYYY' if faults else 'YYYY-MM-DD' }})</label><input id="due_date" name="due_date" value="{{ form.get('due_date','') }}">
+<button type="submit" data-role="submit-record">Submit invoice</button></form>{% endblock %}

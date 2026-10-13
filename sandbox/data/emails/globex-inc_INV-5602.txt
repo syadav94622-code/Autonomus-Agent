@@ -1,0 +1,14 @@
+From: billing@globex-inc.example
+To: ap@centralign.example
+Subject: Invoice INV-5602 from Globex Inc
+
+Hello, please find our invoice details below.
+
+Vendor: Globex Inc
+Invoice No: INV-5602
+Invoice Date: 20 Mar 2026
+Due Date: 19 Apr 2026
+Description: Gadget shipment
+Amount Due: USD 1,125.00
+
+Thanks

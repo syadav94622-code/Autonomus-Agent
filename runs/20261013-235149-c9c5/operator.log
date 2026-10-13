@@ -1,0 +1,1277 @@
+23:51:49 INFO    operator.main   | RUN 20261013-235149-c9c5 | provider=groq model=openai/gpt-oss-120b | goal: Mark the latest PO from Globex as received.
+23:51:49 INFO    operator.main   | full debug trace: D:\centralign-operator\runs\20261013-235149-c9c5\operator.log
+23:51:50 INFO    operator.graph  | === NODE load_context | goal: Mark the latest PO from Globex as received.
+23:51:50 INFO    operator.llm    | [select_context #1] -> request: 2 messages | last=human: Task: Mark the latest PO from Globex as received. //  // Index: // - company.md: Company overview, systems and URLs, naming conventions // - policies.md: Approval thresholds and what the AI may and may not do // - procedures/invoice_entry.md: Step-by-step procedure for entering a vendor invoice into...[+200 chars]
+23:51:50 DEBUG   operator.llm    | [select_context #1]    SYSTEM: You select which company context documents are needed to complete a task.
+Return only file names that appear in the index. If the message is a greeting or not an actionable task,
+return an empty list. You must respond by calling the ContextSelection tool.
+23:51:50 DEBUG   operator.llm    | [select_context #1]    HUMAN: Task: Mark the latest PO from Globex as received.
+
+Index:
+- company.md: Company overview, systems and URLs, naming conventions
+- policies.md: Approval thresholds and what the AI may and may not do
+- procedures/invoice_entry.md: Step-by-step procedure for entering a vendor invoice into the ERP
+- procedures/po_receiving.md: Procedure for marking a purchase order as received in the ERP
+- vendors.md: Vendor list with aliases (some aliases, like "Acme", are shared by two vendors)
+23:51:52 INFO    operator.llm    | [select_context #1] <- TOOL CALL ContextSelection({'docs': ['procedures/po_receiving.md', 'vendors.md', 'company.md'], 'reason': 'Need the PO receiving procedure and vendor info for Globex, plus system URLs from company overview.'}) | 1.9s in=319 out=142
+23:51:52 DEBUG   operator.llm    | [select_context #1]    full response:  | tool_calls=[{'name': 'ContextSelection', 'args': {'docs': ['procedures/po_receiving.md', 'vendors.md', 'company.md'], 'reason': 'Need the PO receiving procedure and vendor info for Globex, plus system URLs from company overview.'}, 'id': 'fc_4c0ea8e3-b6a3-45a9-8e7c-6661a577abcb', 'type': 'tool_call'}]
+23:51:52 INFO    operator.llm    | [select_context] structured result OK (ContextSelection)
+23:51:52 INFO    operator.planner| context docs selected: ['procedures/po_receiving.md', 'vendors.md', 'company.md'] | reason: Need the PO receiving procedure and vendor info for Globex, plus system URLs from company overview.
+23:51:52 DEBUG   operator.graph  | loaded context docs (3049 chars)
+23:51:52 INFO    operator.graph  | === NODE plan
+23:51:52 INFO    operator.llm    | [plan #2] -> request: 2 messages | last=human: Goal: Mark the latest PO from Globex as received. //  // Known facts: {}
+23:51:52 DEBUG   operator.llm    | [plan #2]    SYSTEM: You are the Planner of an AI operator that completes company tasks with real tools.
+Turn the goal into an ordered list of small steps. Rules:
+- You must respond by calling the Plan tool. Never answer in plain text.
+- Follow the relevant procedure document in the context. Do not invent systems or URLs.
+- Each step must be doable in at most 8 tool calls by an executor that sees only that step. The browser is
+  already authenticated. NEVER plan a login step. Never repeat navigation that an earlier step already did.
+- The executor does NOT see the procedure document. Make every step description SELF-CONTAINED: name the exact
+  tools, arguments and URLs to use and any procedure rule that matters (e.g. "use submit_record, never click submit").
+- Prefer few, meaningful steps (typically 3-4), each 2-8 tool calls, e.g. one step "identify the document"
+  (lookup_vendor + find_latest_document + read_file) instead of one step per tool call.
+- Do NOT include a final verification step; the system verifies deterministically afterwards.
+- Never include a step that asks a human unless information is truly missing; ambiguity is handled by tools.
+- If the goal is a greeting, unclear, or not something these tools can do: return steps=[] and put ONE
+  clarifying question in open_questions.
+- Mark needs_approval=true for steps that submit something above policy thresholds.
+- submit_record already saves a screenshot automatically; do not make a separate screenshot a success criterion.
+- When re-planning, plan only the REMAINING work, using the known facts, and avoid repeating the failed approach.
+  A one-time ERP HTTP 500 is retryable with identical values; it is not a data problem.
+Available tools:
+- list_files: List files in a folder (relative to the project root, e.g. 'sandbox/data/invoices').
+- read_file: Read a text file or extract the text of a PDF (path relative to the project root).
+- goto: Open a URL in the browser (allow-listed sandbox URLs only). Returns the page snapshot.
+- snapshot: Compact text list of visible interactive elements with short ids (e1, e2...).
+- click: Click an element by id from the latest snapshot. Returns the new page snapshot.
+- fill: Type a value into an input or choose an option in a select (element id from snapshot).
+- fill_form: Fill several fields at once. `values` maps element id -> value, e.g. {"e1": "Acme Corp", "e2": "INV-1"}.
+- read_page_text: Read the visible text of the current page (tables, flash messages, errors).
+- screenshot: Save a screenshot of the current page as evidence (saved under runs/<id>/).
+- lookup_vendor: Resolve a vendor name or alias against the vendor list. Reports AMBIGUOUS when several vendors match.
+- find_latest_document: Find the latest source document for a vendor. kind: 'invoice' (searches invoice PDFs and emails) or 'po'.
+- submit_record: Submit the record on the current page through the policy gate.
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+
+=== procedures/po_receiving.md ===
+---
+description: Procedure for marking a purchase order as received in the ERP
+---
+# Procedure: mark a purchase order received
+1. Confirm the vendor with `lookup_vendor` (ask the human if AMBIGUOUS).
+2. Call `find_latest_document(kind="po", vendor=<canonical name>)` to get the latest PO number and its source_file.
+3. `read_file` the source_file to confirm the PO number.
+4. Open `/pos`, find that PO and open its detail page (it must be open, not already received).
+5. Call `submit_record` with record_type="po_receive", vendor and po_number (this presses "Mark as received").
+6. Take a screenshot of the result.
+
+=== vendors.md ===
+---
+description: Vendor list with aliases (some aliases, like "Acme", are shared by two vendors)
+---
+# Vendors
+- **Acme Corp** — aliases: Acme, Acme Co
+- **Acme Corporation Ltd** — aliases: Acme, Acme Corporation
+- **Globex Inc** — aliases: Globex
+- **Initech LLC** — aliases: Initech
+23:51:52 DEBUG   operator.llm    | [plan #2]    HUMAN: Goal: Mark the latest PO from Globex as received.
+
+Known facts: {}
+23:51:55 INFO    operator.llm    | [plan #2] <- TOOL CALL Plan({'assumptions': ['The vendor name "Globex" maps uniquely to "Globex Inc".', 'The latest PO is uniquely identifiable by its date inside the PDF.'], 'objective': 'Mark the latest PO from Globex as received.', 'steps': [{'description': 'Resolve the vendor name "Globex" to its canonical name using looku...[+1398 chars]) | 2.8s in=1649 out=806
+23:51:55 DEBUG   operator.llm    | [plan #2]    full response:  | tool_calls=[{'name': 'Plan', 'args': {'assumptions': ['The vendor name "Globex" maps uniquely to "Globex Inc".', 'The latest PO is uniquely identifiable by its date inside the PDF.'], 'objective': 'Mark the latest PO from Globex as received.', 'steps': [{'description': 'Resolve the vendor name "Globex" to its canonical name using lookup_vendor.', 'id': 1, 'needs_approval': False, 'success_criteria': 'lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.', 'tool_hint': 'lookup_vendor'}, {'description': 'Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.', 'id': 2, 'needs_approval': False, 'success_criteria': 'find_latest_document returns a source_file path and the PO number of the most recent PO.', 'tool_hint': 'find_latest_document'}, {'description': 'Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.', 'id': 3, 'needs_approval': False, 'success_criteria': 'read_file extracts text containing the same PO number as step 2.', 'tool_hint': 'read_file'}, {'description': 'Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record.', 'id': 4, 'needs_approval': False, 'success_criteria': 'submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.', 'tool_hint': 'goto, snapshot, click, submit_record'}, {'description': 'Capture a screenshot of the PO detail page after submission to document the successful receipt.', 'id': 5, 'needs_approval': False, 'success_criteria': 'screenshot file is saved in the run directory.', 'tool_hint': 'screenshot'}]}, 'id': 'fc_0dd49847-7bfd-4e30-9019-dcf68a60af1e', 'type': 'tool_call'}]
+23:51:55 INFO    operator.llm    | [plan] structured result OK (Plan)
+23:51:55 INFO    operator.graph  | PLAN objective: Mark the latest PO from Globex as received.
+23:51:55 INFO    operator.graph  |   step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor. | tools: lookup_vendor | success: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+23:51:55 INFO    operator.graph  |   step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document. | tools: find_latest_document | success: find_latest_document returns a source_file path and the PO number of the most recent PO.
+23:51:55 INFO    operator.graph  |   step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document. | tools: read_file | success: read_file extracts text containing the same PO number as step 2.
+23:51:55 INFO    operator.graph  |   step 4: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record. | tools: goto, snapshot, click, submit_record | success: submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.
+23:51:55 INFO    operator.graph  |   step 5: Capture a screenshot of the PO detail page after submission to document the successful receipt. | tools: screenshot | success: screenshot file is saved in the run directory.
+23:51:55 INFO    operator.graph  |   assumptions: ['The vendor name "Globex" maps uniquely to "Globex Inc".', 'The latest PO is uniquely identifiable by its date inside the PDF.']
+23:51:55 INFO    operator.graph  | === NODE act | step 1/5
+23:51:56 INFO    operator.actor  | [step 1] START: Resolve the vendor name "Globex" to its canonical name using lookup_vendor. | success: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+23:51:56 DEBUG   operator.actor  | [step 1] task message:
+Objective: Mark the latest PO from Globex as received.
+Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor.
+Tool hint: lookup_vendor
+Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+Known facts: {}
+23:51:56 INFO    operator.llm    | [actor.step1 #3] -> request: 2 messages | last=human: Objective: Mark the latest PO from Globex as received. // Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor. // Tool hint: lookup_vendor // Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity. // Known facts: {}
+23:51:56 DEBUG   operator.llm    | [actor.step1 #3]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:51:56 DEBUG   operator.llm    | [actor.step1 #3]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor.
+Tool hint: lookup_vendor
+Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+Known facts: {}
+23:51:57 INFO    operator.llm    | [actor.step1 #3] <- TOOL CALL lookup_vendor({'name': 'Globex'}) | 1.5s in=1715 out=84
+23:51:57 DEBUG   operator.llm    | [actor.step1 #3]    full response:  | tool_calls=[{'name': 'lookup_vendor', 'args': {'name': 'Globex'}, 'id': 'fc_17bbcbda-d8cb-4566-a5bb-8fc05d031238', 'type': 'tool_call'}]
+23:51:57 INFO    operator.actor  | [step 1] tool #1 -> lookup_vendor({"name": "Globex"})
+23:51:57 INFO    operator.actor  | [step 1] tool result <- lookup_vendor: MATCH: Globex Inc
+23:51:57 DEBUG   operator.actor  | [step 1] tool result FULL <- lookup_vendor:
+MATCH: Globex Inc
+23:51:57 INFO    operator.llm    | [actor.step1 #4] -> request: 4 messages | last=tool: MATCH: Globex Inc
+23:51:57 DEBUG   operator.llm    | [actor.step1 #4]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:51:57 DEBUG   operator.llm    | [actor.step1 #4]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor.
+Tool hint: lookup_vendor
+Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+Known facts: {}
+23:51:57 DEBUG   operator.llm    | [actor.step1 #4]    AI: 
+23:51:57 DEBUG   operator.llm    | [actor.step1 #4]       tool_call: lookup_vendor({'name': 'Globex'})
+23:51:57 DEBUG   operator.llm    | [actor.step1 #4]    TOOL: MATCH: Globex Inc
+23:51:58 ERROR   operator.llm    | [actor.step1 #4] <- LLM ERROR after 0.8s: BadRequestError: Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vendor": "Globex Inc"\n  },\n  "status": "done"\n}}'}}
+23:51:58 WARNING operator.actor  | [step 1] provider rejected the model's tool call (attempt 1/3): Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vend...[+50 chars]
+23:51:58 INFO    operator.llm    | [actor.step1 #5] -> request: 5 messages | last=human: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of...[+71 chars]
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor.
+Tool hint: lookup_vendor
+Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+Known facts: {}
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]    AI: 
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]       tool_call: lookup_vendor({'name': 'Globex'})
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]    TOOL: MATCH: Globex Inc
+23:51:58 DEBUG   operator.llm    | [actor.step1 #5]    HUMAN: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of them with valid arguments, or call StepResult if the step is finished.
+23:52:02 INFO    operator.llm    | [actor.step1 #5] <- TOOL CALL lookup_vendor({'name': 'Globex'}) | 4.4s in=1837 out=309
+23:52:02 DEBUG   operator.llm    | [actor.step1 #5]    full response:  | tool_calls=[{'name': 'lookup_vendor', 'args': {'name': 'Globex'}, 'id': 'fc_09253d50-dfaf-4c07-933c-72259b2413a5', 'type': 'tool_call'}]
+23:52:02 WARNING operator.actor  | [step 1] tool result <- lookup_vendor: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:52:02 DEBUG   operator.actor  | [step 1] tool result FULL <- lookup_vendor:
+LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:52:02 INFO    operator.llm    | [actor.step1 #6] -> request: 6 messages | last=tool: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 1: Resolve the vendor name "Globex" to its canonical name using lookup_vendor.
+Tool hint: lookup_vendor
+Success criteria: lookup_vendor returns the canonical vendor "Globex Inc" without ambiguity.
+Known facts: {}
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    AI: 
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]       tool_call: lookup_vendor({'name': 'Globex'})
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    TOOL: MATCH: Globex Inc
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    AI: 
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]       tool_call: lookup_vendor({'name': 'Globex'})
+23:52:02 DEBUG   operator.llm    | [actor.step1 #6]    TOOL: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:52:24 INFO    operator.llm    | [actor.step1 #6] <- TOOL CALL StepResult({'facts': {'vendor': 'Globex Inc'}, 'status': 'done'}) | 21.8s in=1792 out=114
+23:52:24 DEBUG   operator.llm    | [actor.step1 #6]    full response:  | tool_calls=[{'name': 'StepResult', 'args': {'facts': {'vendor': 'Globex Inc'}, 'status': 'done'}, 'id': 'fc_07120cf8-b9c6-4532-aa7a-02f46357d9a1', 'type': 'tool_call'}]
+23:52:24 INFO    operator.actor  | [step 1] RESULT status=done note='' question=None facts={'vendor': 'Globex Inc'} | tool_calls=1 model_turns=3
+23:52:24 INFO    operator.graph  | step 1 finished: DONE 
+23:52:24 INFO    operator.graph  | === NODE observe | status=done -> route=act | facts={'vendor': 'Globex Inc'}
+23:52:24 INFO    operator.graph  | === NODE act | step 2/5
+23:52:24 INFO    operator.actor  | [step 2] START: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document. | success: find_latest_document returns a source_file path and the PO number of the most recent PO.
+23:52:24 DEBUG   operator.actor  | [step 2] task message:
+Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:52:24 INFO    operator.llm    | [actor.step2 #7] -> request: 2 messages | last=human: Objective: Mark the latest PO from Globex as received. // Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document. // Tool hint: find_latest_document // Success criteria: find_latest_document returns a source_file path and the PO number of the most rece...[+47 chars]
+23:52:24 DEBUG   operator.llm    | [actor.step2 #7]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:52:24 DEBUG   operator.llm    | [actor.step2 #7]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:52:40 INFO    operator.llm    | [actor.step2 #7] <- TOOL CALL find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'}) | 15.2s in=1730 out=81
+23:52:40 DEBUG   operator.llm    | [actor.step2 #7]    full response:  | tool_calls=[{'name': 'find_latest_document', 'args': {'kind': 'po', 'vendor': 'Globex Inc'}, 'id': 'fc_b7b6b118-7379-454d-a28d-abe3b6852185', 'type': 'tool_call'}]
+23:52:40 INFO    operator.actor  | [step 2] tool #1 -> find_latest_document({"kind": "po", "vendor": "Globex Inc"})
+23:52:40 INFO    operator.actor  | [step 2] tool result <- find_latest_document: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:52:40 DEBUG   operator.actor  | [step 2] tool result FULL <- find_latest_document:
+LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:52:40 INFO    operator.llm    | [actor.step2 #8] -> request: 4 messages | last=tool: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:52:40 DEBUG   operator.llm    | [actor.step2 #8]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:52:40 DEBUG   operator.llm    | [actor.step2 #8]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:52:40 DEBUG   operator.llm    | [actor.step2 #8]    AI: 
+23:52:40 DEBUG   operator.llm    | [actor.step2 #8]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:52:40 DEBUG   operator.llm    | [actor.step2 #8]    TOOL: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:52:44 ERROR   operator.llm    | [actor.step2 #8] <- LLM ERROR after 4.1s: BadRequestError: Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vendor": "Globex Inc",\n    "po_number": "PO-7003",\n    "po_date": "2026-03-12",\n    "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"\n  },\n  "note": "Found the latest purchase order document for Globex Inc.",\n  "status": "done"\n}}'}}
+23:52:44 WARNING operator.actor  | [step 2] provider rejected the model's tool call (attempt 1/3): Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vend...[+255 chars]
+23:52:44 INFO    operator.llm    | [actor.step2 #9] -> request: 5 messages | last=human: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of...[+71 chars]
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]    AI: 
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]    TOOL: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:52:44 DEBUG   operator.llm    | [actor.step2 #9]    HUMAN: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of them with valid arguments, or call StepResult if the step is finished.
+23:53:10 INFO    operator.llm    | [actor.step2 #9] <- TOOL CALL find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'}) | 26.8s in=1893 out=294
+23:53:10 DEBUG   operator.llm    | [actor.step2 #9]    full response:  | tool_calls=[{'name': 'find_latest_document', 'args': {'kind': 'po', 'vendor': 'Globex Inc'}, 'id': 'fc_9df399e6-4c7b-4416-93dd-9b39060d545a', 'type': 'tool_call'}]
+23:53:10 WARNING operator.actor  | [step 2] tool result <- find_latest_document: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:53:10 DEBUG   operator.actor  | [step 2] tool result FULL <- find_latest_document:
+LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:53:10 INFO    operator.llm    | [actor.step2 #10] -> request: 6 messages | last=tool: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    AI: 
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    TOOL: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    AI: 
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:53:10 DEBUG   operator.llm    | [actor.step2 #10]    TOOL: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:53:17 ERROR   operator.llm    | [actor.step2 #10] <- LLM ERROR after 6.8s: BadRequestError: Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vendor": "Globex Inc",\n    "po_number": "PO-7003",\n    "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf",\n    "po_date": "2026-03-12"\n  },\n  "note": "Successfully retrieved latest PO document details for Globex Inc.",\n  "status": "done"\n}}'}}
+23:53:17 WARNING operator.actor  | [step 2] provider rejected the model's tool call (attempt 1/3): Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'json' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "json", "arguments": {\n  "facts": {\n    "vend...[+264 chars]
+23:53:17 INFO    operator.llm    | [actor.step2 #11] -> request: 7 messages | last=human: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of...[+71 chars]
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 2: Find the latest purchase order document for the vendor "Globex Inc" using find_latest_document.
+Tool hint: find_latest_document
+Success criteria: find_latest_document returns a source_file path and the PO number of the most recent PO.
+Known facts: {"vendor": "Globex Inc"}
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    AI: 
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    TOOL: LATEST po for Globex Inc: number=PO-7003 date=2026-03-12 source_file=sandbox/data/purchase_orders/globex-inc_PO-7003.pdf
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    AI: 
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]       tool_call: find_latest_document({'kind': 'po', 'vendor': 'Globex Inc'})
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    TOOL: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:53:17 DEBUG   operator.llm    | [actor.step2 #11]    HUMAN: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of them with valid arguments, or call StepResult if the step is finished.
+23:53:35 INFO    operator.llm    | [actor.step2 #11] <- TOOL CALL StepResult({'facts': {'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'}, 'status': 'done'}) | 17.8s in=1946 out=174
+23:53:35 DEBUG   operator.llm    | [actor.step2 #11]    full response:  | tool_calls=[{'name': 'StepResult', 'args': {'facts': {'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'}, 'status': 'done'}, 'id': 'fc_68f2335e-0e4e-4501-891e-082c0a711965', 'type': 'tool_call'}]
+23:53:35 INFO    operator.actor  | [step 2] RESULT status=done note='' question=None facts={'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'} | tool_calls=1 model_turns=3
+23:53:35 INFO    operator.graph  | step 2 finished: DONE 
+23:53:35 INFO    operator.graph  | === NODE observe | status=done -> route=act | facts={'vendor': 'Globex Inc', 'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}
+23:53:35 INFO    operator.graph  | === NODE act | step 3/5
+23:53:35 INFO    operator.actor  | [step 3] START: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document. | success: read_file extracts text containing the same PO number as step 2.
+23:53:35 DEBUG   operator.actor  | [step 3] task message:
+Objective: Mark the latest PO from Globex as received.
+Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.
+Tool hint: read_file
+Success criteria: read_file extracts text containing the same PO number as step 2.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:53:35 INFO    operator.llm    | [actor.step3 #12] -> request: 2 messages | last=human: Objective: Mark the latest PO from Globex as received. // Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document. // Tool hint: read_file // Success criteria: read_file extracts text containing the same PO number as step 2. // Known facts: ...[+143 chars]
+23:53:35 DEBUG   operator.llm    | [actor.step3 #12]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:53:35 DEBUG   operator.llm    | [actor.step3 #12]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.
+Tool hint: read_file
+Success criteria: read_file extracts text containing the same PO number as step 2.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:53:46 INFO    operator.llm    | [actor.step3 #12] <- TOOL CALL read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}) | 10.3s in=1771 out=109
+23:53:46 DEBUG   operator.llm    | [actor.step3 #12]    full response:  | tool_calls=[{'name': 'read_file', 'args': {'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}, 'id': 'fc_b2c6abba-0e53-4f69-880f-fa64fcc31507', 'type': 'tool_call'}]
+23:53:46 INFO    operator.actor  | [step 3] tool #1 -> read_file({"path": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"})
+23:53:46 INFO    operator.actor  | [step 3] tool result <- read_file: PURCHASE ORDER // Vendor: Globex Inc // PO Number: PO-7003 // Order Date: 12 Mar 2026 // Items: Gadgets x40 // Buyer: CentrAlign Procurement // 
+23:53:46 DEBUG   operator.actor  | [step 3] tool result FULL <- read_file:
+PURCHASE ORDER
+Vendor: Globex Inc
+PO Number: PO-7003
+Order Date: 12 Mar 2026
+Items: Gadgets x40
+Buyer: CentrAlign Procurement
+
+23:53:46 INFO    operator.llm    | [actor.step3 #13] -> request: 4 messages | last=tool: PURCHASE ORDER // Vendor: Globex Inc // PO Number: PO-7003 // Order Date: 12 Mar 2026 // Items: Gadgets x40 // Buyer: CentrAlign Procurement // 
+23:53:46 DEBUG   operator.llm    | [actor.step3 #13]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:53:46 DEBUG   operator.llm    | [actor.step3 #13]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.
+Tool hint: read_file
+Success criteria: read_file extracts text containing the same PO number as step 2.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:53:46 DEBUG   operator.llm    | [actor.step3 #13]    AI: 
+23:53:46 DEBUG   operator.llm    | [actor.step3 #13]       tool_call: read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'})
+23:53:46 DEBUG   operator.llm    | [actor.step3 #13]    TOOL: PURCHASE ORDER
+Vendor: Globex Inc
+PO Number: PO-7003
+Order Date: 12 Mar 2026
+Items: Gadgets x40
+Buyer: CentrAlign Procurement
+
+23:53:48 ERROR   operator.llm    | [actor.step3 #13] <- LLM ERROR after 1.8s: BadRequestError: Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'name=StepResult]' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "name=StepResult]", "arguments": {\n  "facts": {\n    "vendor": "Globex Inc",\n    "po_number": "PO-7003",\n    "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf",\n    "po_text_snippet": "PO Number: PO-7003"\n  },\n  "note": "Read PO PDF and confirmed PO number matches expected PO-7003.",\n  "status": "done"\n}}'}}
+23:53:48 WARNING operator.actor  | [step 3] provider rejected the model's tool call (attempt 1/3): Error code: 400 - {'error': {'message': "Tool call validation failed: tool call validation failed: attempted to call tool 'name=StepResult]' which was not in request.tools", 'type': 'invalid_request_error', 'code': 'tool_use_failed', 'failed_generation': '{"name": "name=StepResult]", "arguments": {\...[+300 chars]
+23:53:48 INFO    operator.llm    | [actor.step3 #14] -> request: 5 messages | last=human: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of...[+71 chars]
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.
+Tool hint: read_file
+Success criteria: read_file extracts text containing the same PO number as step 2.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]    AI: 
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]       tool_call: read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'})
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]    TOOL: PURCHASE ORDER
+Vendor: Globex Inc
+PO Number: PO-7003
+Order Date: 12 Mar 2026
+Items: Gadgets x40
+Buyer: CentrAlign Procurement
+
+23:53:48 DEBUG   operator.llm    | [actor.step3 #14]    HUMAN: Your last tool call was rejected: the tool name was not valid. The tool name must be EXACTLY one of: list_files, read_file, goto, snapshot, click, fill, fill_form, read_page_text, screenshot, lookup_vendor, find_latest_document, submit_record, StepResult (there is no tool called 'json'). Call one of them with valid arguments, or call StepResult if the step is finished.
+23:54:06 INFO    operator.llm    | [actor.step3 #14] <- TOOL CALL read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}) | 18.7s in=1941 out=112
+23:54:06 DEBUG   operator.llm    | [actor.step3 #14]    full response:  | tool_calls=[{'name': 'read_file', 'args': {'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}, 'id': 'fc_00f7820f-240d-4297-a0da-6785e722c549', 'type': 'tool_call'}]
+23:54:06 WARNING operator.actor  | [step 3] tool result <- read_file: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:54:06 DEBUG   operator.actor  | [step 3] tool result FULL <- read_file:
+LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:54:06 INFO    operator.llm    | [actor.step3 #15] -> request: 6 messages | last=tool: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 3: Read the PO PDF file returned in step 2 to confirm the PO number matches the one from find_latest_document.
+Tool hint: read_file
+Success criteria: read_file extracts text containing the same PO number as step 2.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    AI: 
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]       tool_call: read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'})
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    TOOL: PURCHASE ORDER
+Vendor: Globex Inc
+PO Number: PO-7003
+Order Date: 12 Mar 2026
+Items: Gadgets x40
+Buyer: CentrAlign Procurement
+
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    AI: 
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]       tool_call: read_file({'path': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'})
+23:54:06 DEBUG   operator.llm    | [actor.step3 #15]    TOOL: LOOP DETECTED: identical consecutive action refused. Try something different or report failure.
+23:54:08 INFO    operator.llm    | [actor.step3 #15] <- TOOL CALL StepResult({'facts': {'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'}, 'note': 'read_file extracted PO details matching find_latest_document.', 'status': 'done'}) | 2.0s in=1908 out=199
+23:54:08 DEBUG   operator.llm    | [actor.step3 #15]    full response:  | tool_calls=[{'name': 'StepResult', 'args': {'facts': {'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'}, 'note': 'read_file extracted PO details matching find_latest_document.', 'status': 'done'}, 'id': 'fc_789cae55-2710-4eab-abaa-0e5ff858d320', 'type': 'tool_call'}]
+23:54:08 INFO    operator.actor  | [step 3] RESULT status=done note='read_file extracted PO details matching find_latest_document.' question=None facts={'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf', 'vendor': 'Globex Inc'} | tool_calls=1 model_turns=3
+23:54:08 INFO    operator.graph  | step 3 finished: DONE read_file extracted PO details matching find_latest_document.
+23:54:08 INFO    operator.graph  | === NODE observe | status=done -> route=act | facts={'vendor': 'Globex Inc', 'po_date': '2026-03-12', 'po_number': 'PO-7003', 'source_file': 'sandbox/data/purchase_orders/globex-inc_PO-7003.pdf'}
+23:54:08 INFO    operator.graph  | === NODE act | step 4/5
+23:54:09 INFO    operator.actor  | [step 4] START: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record. | success: submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.
+23:54:09 DEBUG   operator.actor  | [step 4] task message:
+Objective: Mark the latest PO from Globex as received.
+Step 4: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record.
+Tool hint: goto, snapshot, click, submit_record
+Success criteria: submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:54:09 INFO    operator.llm    | [actor.step4 #16] -> request: 2 messages | last=human: Objective: Mark the latest PO from Globex as received. // Step 4: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record. // Tool hint: goto, snapshot, click, submit_record // Success criteria: submit_record succeeds...[+268 chars]
+23:54:09 DEBUG   operator.llm    | [actor.step4 #16]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:54:09 DEBUG   operator.llm    | [actor.step4 #16]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 4: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record.
+Tool hint: goto, snapshot, click, submit_record
+Success criteria: submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:54:11 INFO    operator.llm    | [actor.step4 #16] <- TOOL CALL goto({'url': 'http://127.0.0.1:5001/pos'}) | 2.0s in=1803 out=344
+23:54:11 DEBUG   operator.llm    | [actor.step4 #16]    full response:  | tool_calls=[{'name': 'goto', 'args': {'url': 'http://127.0.0.1:5001/pos'}, 'id': 'fc_6a4dc9a9-c255-4cd3-bca8-122ffca8da6e', 'type': 'tool_call'}]
+23:54:11 INFO    operator.actor  | [step 4] tool #1 -> goto({"url": "http://127.0.0.1:5001/pos"})
+23:54:11 INFO    operator.actor  | [step 4] tool result <- goto: HTTP 200 // URL: http://127.0.0.1:5001/pos // Title: Mock ERP // [e1] a "Vendors" href=/vendors // [e2] a "Invoices" href=/invoices // [e3] a "New invoice" href=/invoices/new // [e4] a "Purchase orders" href=/pos // [e5] a "PO-7001" href=/pos/1 // [e6] a "PO-7002" href=/pos/2 // [e7] a "PO-7003" hre...[+72 chars]
+23:54:11 DEBUG   operator.actor  | [step 4] tool result FULL <- goto:
+HTTP 200
+URL: http://127.0.0.1:5001/pos
+Title: Mock ERP
+[e1] a "Vendors" href=/vendors
+[e2] a "Invoices" href=/invoices
+[e3] a "New invoice" href=/invoices/new
+[e4] a "Purchase orders" href=/pos
+[e5] a "PO-7001" href=/pos/1
+[e6] a "PO-7002" href=/pos/2
+[e7] a "PO-7003" href=/pos/3
+[e8] a "PO-4410" href=/pos/4
+[e9] a "PO-9100" href=/pos/5
+23:54:11 INFO    operator.llm    | [actor.step4 #17] -> request: 4 messages | last=tool: HTTP 200 // URL: http://127.0.0.1:5001/pos // Title: Mock ERP // [e1] a "Vendors" href=/vendors // [e2] a "Invoices" href=/invoices // [e3] a "New invoice" href=/invoices/new // [e4] a "Purchase orders" href=/pos // [e5] a "PO-7001" href=/pos/1 // [e6] a "PO-7002" href=/pos/2 // [e7] a "PO-7003" hre...[+72 chars]
+23:54:11 DEBUG   operator.llm    | [actor.step4 #17]    SYSTEM: You are the Actor of an AI operator. You execute exactly ONE step of a plan using tools.
+Rules:
+- You act ONLY through tool calls. Never reply in plain text: every turn must be a tool call.
+- Use at most 8 tool calls. Be economical: goto/click already return a page snapshot.
+- Element ids (e1, e2...) come from the latest snapshot and change after every page load.
+- Do not log in; the session is already authenticated.
+- Never guess values: read them from files or pages. Amounts are plain numbers (e.g. 3480.00).
+- Never click a gated submit button; use submit_record. If a tool says BLOCKED or AMBIGUOUS, stop and
+  report status=needs_human with a clear question.
+- If a tool result is an error, adapt (re-read the page, fix the value) rather than repeating the same call.
+- Do ONLY this step. As soon as its success criteria are met, call StepResult immediately; do not start the
+  next step even if you know what it is. Other steps run later with their own budget.
+- If the ERP shows a validation error, read the message, correct the field and resubmit; on a server error
+  retry once.
+- FINISH by calling the StepResult tool BY ITSELF, in its own turn, after you have seen the results of your
+  other tool calls. status=done only if the success criteria are met; failed if not (explain in note);
+  needs_human if a human decision is required (set question). Put values discovered in this step in facts as
+  plain strings (vendor, invoice_number, amount, due_date, invoice_date, source_file, po_number as relevant).
+
+Company context:
+=== company.md ===
+---
+description: Company overview, systems and URLs, naming conventions
+---
+# CentrAlign (sandbox company)
+We are a small company that processes vendor invoices and purchase orders.
+
+## Systems
+- Internal ERP (mock): http://127.0.0.1:5001
+  - The browser session is already logged in. Never log in; if you land on /login the tools re-authenticate automatically.
+  - Vendors: /vendors, Invoices: /invoices, New invoice: /invoices/new
+  - Purchase orders: /pos, PO detail: /pos/<id>
+- Source documents are local files under `sandbox/data/`:
+  - `sandbox/data/invoices/`  vendor invoice PDFs, named `<vendor-slug>_<invoice-no>.pdf`
+  - `sandbox/data/purchase_orders/`  PO PDFs, named `<vendor-slug>_<po-no>.pdf`
+  - `sandbox/data/emails/`  vendor emails, named `<vendor-slug>_<invoice-no>.txt`; some invoices arrive only as emails
+    (same fields as the PDF invoices: Invoice No, Invoice Date, Due Date, Amount Due)
+
+## Conventions
+- Amounts are entered as plain numbers with two decimals, no currency symbol or commas (e.g. 3480.00).
+- Dates: the ERP requires YYYY-MM-DD even though the form label says MM/DD/YYYY.
+- Always use the vendor's canonical name from the vendor list.
+- "Latest" means the most recent date printed inside the document, not the file name or file time.
+
+=== policies.md ===
+---
+description: Approval thresholds and what the AI may and may not do
+approval_threshold: 5000
+allowed_urls: http://127.0.0.1:5001
+allowed_paths: sandbox/data
+---
+# Policies
+- Invoices with an amount above the approval threshold (USD 5,000) need recorded human approval before they are submitted. The system blocks the submit until approval is recorded.
+- If the vendor name is ambiguous (matches more than one vendor), ask the human which one. Never guess.
+- If several invoices could be "the latest" (same date), ask the human.
+- The AI may only open URLs on the allow-list and read files under the allowed paths.
+- The AI must never submit the same invoice twice. If the ERP reports a duplicate, stop and report it.
+- The AI must not change or delete existing ERP records.
+23:54:11 DEBUG   operator.llm    | [actor.step4 #17]    HUMAN: Objective: Mark the latest PO from Globex as received.
+Step 4: Open the ERP PO list page (/pos), locate the PO number from step 2, click its link to open the detail page, then submit the receipt record.
+Tool hint: goto, snapshot, click, submit_record
+Success criteria: submit_record succeeds with record_type="po_receive", vendor="Globex Inc" and the PO number, and the ERP shows the PO as received.
+Known facts: {"vendor": "Globex Inc", "po_date": "2026-03-12", "po_number": "PO-7003", "source_file": "sandbox/data/purchase_orders/globex-inc_PO-7003.pdf"}
+23:54:11 DEBUG   operator.llm    | [actor.step4 #17]    AI: 
+23:54:11 DEBUG   operator.llm    | [actor.step4 #17]       tool_call: goto({'url': 'http://127.0.0.1:5001/pos'})
+23:54:11 DEBUG   operator.llm    | [actor.step4 #17]    TOOL: HTTP 200
+URL: http://127.0.0.1:5001/pos
+Title: Mock ERP
+[e1] a "Vendors" href=/vendors
+[e2] a "Invoices" href=/invoices
+[e3] a "New invoice" href=/invoices/new
+[e4] a "Purchase orders" href=/pos
+[e5] a "PO-7001" href=/pos/1
+[e6] a "PO-7002" href=/pos/2
+[e7] a "PO-7003" href=/pos/3
+[e8] a "PO-4410" href=/pos/4
+[e9] a "PO-9100" href=/pos/5
